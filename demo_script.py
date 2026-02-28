@@ -17,7 +17,7 @@ def main():
     checkerboard_columns = settings['checkerboard_columns']
     box_size_scale = settings['checkerboard_box_size_scale']
 
-    # Example usage with generic, parameterized calls to calib.py functions
+    # Calibrate and store intrinsics once
     mtx1, dist1 = calib.calibrate_camera_for_intrinsic_parameters(
         camera_id=0,
         images_prefix='frames/camera0/*',
@@ -32,13 +32,20 @@ def main():
         checkerboard_columns=checkerboard_columns,
         box_size_scale=box_size_scale
     )
-    # Stereo calibration (remove extra kwargs)
+    # Stereo calibration and store extrinsics
     R, T = calib.stereo_calibrate(
         mtx1, dist1, mtx2, dist2,
         'frames/synched/camera0/*.png', 'frames/synched/camera1/*.png',
         checkerboard_rows, checkerboard_columns, box_size_scale
     )
-    # Triangulation and visualization
+    calib.save_extrinsic_calibration_parameters(np.eye(3), np.zeros((3,1)), R, T)  # Save stereo extrinsics
+
+
+
+    mtx1, dist1 = calib.load_intrinsics('camera0')
+    mtx2, dist2 = calib.load_intrinsics('camera1')
+    R, T = calib.load_extrinsics('camera_parameters/camera1_rot_trans.dat')
+
     print("Triangulating and visualizing 3D chessboard corners from stereo images ...")
     p3ds = calib.triangulate(
         mtx1, mtx2, R, T,

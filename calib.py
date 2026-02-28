@@ -78,7 +78,7 @@ def calibrate_camera_for_intrinsic_parameters(camera_id=0, images_prefix='', che
 
 
     # Save calibration results to file using camera name from images_prefix
-    camera_name = f'camera_{camera_id}'
+    camera_name = f'camera{camera_id}'
     save_camera_intrinsics(cmtx, dist, camera_name)
     return cmtx, dist
 
@@ -491,3 +491,44 @@ def triangulate(mtx1, mtx2, R, T, frames_prefix_c0="frames/synched/D2/*.png", fr
         ax.set_zlabel('Z')
         plt.show()
     return p3ds
+
+# Triangulation: only read from stored camera_parameters
+def load_intrinsics(camera_name):
+    fname = f'camera_parameters/{camera_name}_intrinsics.dat'
+    with open(fname, 'r') as f:
+        lines = f.readlines()
+    cmtx = []
+    dist = []
+    mode = None
+    for line in lines:
+        if 'intrinsic' in line:
+            mode = 'intrinsic'
+            continue
+        if 'distortion' in line:
+            mode = 'distortion'
+            continue
+        if mode == 'intrinsic' and line.strip():
+            cmtx.append([float(x) for x in line.strip().split()])
+        if mode == 'distortion' and line.strip():
+            dist.extend([float(x) for x in line.strip().split()])
+    return np.array(cmtx), np.array([dist])
+
+def load_extrinsics(fname = 'camera_parameters/camera1_rot_trans.dat'):
+
+    with open(fname, 'r') as f:
+        lines = f.readlines()
+    R = []
+    T = []
+    mode = None
+    for line in lines:
+        if 'R:' in line:
+            mode = 'R'
+            continue
+        if 'T:' in line:
+            mode = 'T'
+            continue
+        if mode == 'R' and line.strip():
+            R.append([float(x) for x in line.strip().split()])
+        if mode == 'T' and line.strip():
+            T.append([float(x) for x in line.strip().split()])
+    return np.array(R), np.array(T).reshape(3,1)
