@@ -3,6 +3,8 @@ import cv2 as cv
 import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+
  
  
 def calibrate_camera(images_folder):
@@ -161,11 +163,10 @@ def stereo_calibrate(mtx1, dist1, mtx2, dist2, frames_folder):
             corners2 = cv.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
  
             cv.drawChessboardCorners(frame1, (rows, columns), corners1, c_ret1)
-            cv.imshow('img', frame1)
+            plt.imshow(frame1)
  
             cv.drawChessboardCorners(frame2, (rows, columns), corners2, c_ret2)
-            cv.imshow('img2', frame2)
-            cv.waitKey(500)
+            plt.imshow(frame2)
  
             objpoints.append(objp)
             imgpoints_left.append(corners1)
@@ -180,22 +181,46 @@ def stereo_calibrate(mtx1, dist1, mtx2, dist2, frames_folder):
  
 def triangulate(mtx1, mtx2, R, T):
  
-    uvs1 = [[458, 86], [451, 164], [287, 181],
-            [196, 383], [297, 444], [564, 194],
-            [562, 375], [596, 520], [329, 620],
-            [488, 622], [432, 52], [489, 56]]
+    # Detect chessboard corners in the two selected frames
+    rows = 4  # number of checkerboard rows (inner corners)
+    columns = 7  # number of checkerboard columns (inner corners)
+    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+
+    images_names = sorted(glob.glob("frames/synched/*.png"))
+    if len(images_names) < 2:
+        raise RuntimeError(f"Not enough images in frames/synched/ for triangulation.")
+
+    frame1 = cv.imread(images_names[0], 1)
+    frame2 = cv.imread(images_names[4], 1)
+
+    if frame1 is None or frame2 is None:
+        raise RuntimeError(f"Could not load images: {images_names[0]}, {images_names[4]}")
+
+    gray1 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
+    gray2 = cv.cvtColor(frame2, cv.COLOR_BGR2GRAY)
+
+    ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), None)
+    ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), None)
+
+    if not ret1 or not ret2:
+        raise RuntimeError("Could not detect chessboard corners in one or both images.")
+
+    corners1 = cv.cornerSubPix(gray1, corners1, (11, 11), (-1, -1), criteria)
+    corners2 = cv.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
+
+    uvs1 = corners1.reshape(-1, 2)
+    uvs2 = corners2.reshape(-1, 2)
  
-    uvs2 = [[540, 311], [603, 359], [542, 378],
-            [525, 507], [485, 542], [691, 352],
-            [752, 488], [711, 605], [549, 651],
-            [651, 663], [526, 293], [542, 290]]
  
-    uvs1 = np.array(uvs1)
-    uvs2 = np.array(uvs2)
- 
- 
-    frame1 = cv.imread('testing/_C1.png')
-    frame2 = cv.imread('testing/_C2.png')
+    # images_names = sorted(glob.glob("frames/synched/*.png"))
+    # if len(images_names) < 2:
+    #     raise RuntimeError(f"Not enough images in {frames_folder} for triangulation.")
+
+    # frame1 = cv.imread(images_names[0], 1)
+    # frame2 = cv.imread(images_names[4], 1)
+
+    # if frame1 is None or frame2 is None:
+    #     raise RuntimeError(f"Could not load images: {images_names[0]}, {images_names[1]}")
  
     plt.imshow(frame1[:,:,[2,1,0]])
     plt.scatter(uvs1[:,0], uvs1[:,1])
