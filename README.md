@@ -35,9 +35,6 @@ The camera calibration settings first need to be configured in the ```calibratio
 
 ```frame_width``` and ```frame_height```: Camera calibration is tied with the image resolution. Once this is set, your calibration result can only be used with this resolution. Also, both cameras have to have the exact same ```width``` and ```height```. If your cameras do not support the same resolution, use cv.resize() in opencv to make them same ```width``` and ```height```. This package does not check if your camera resolutions are the same or supported by your camera, and does not raise exception. It is up to you to make sure your cameras can support this resolution.
 
-```mono_calibration_frames```: Number of frames to use to obtain intrinsic camera parameters. Default: 10.
-
-```stereo_calibration_frames```: Number of frames to use to obtain extrinsic camera parameters. Default: 10.
 
 ```view_resize```: If you are using a single screen and cannot see both cameras because the images are too big, then set this to 2. This will show a smaller video feed but the saved frames will still be in full resolution.
 
@@ -61,7 +58,6 @@ The calibration procedures should take less than 10 minutes.
 
 **Step 1. Saving Calibration Pattern Frames**
 
-Step1 will create ```frames``` folder and save calibration pattern frames. The number of frames saved is set by ```mono_calibration_frames```. Press SPACE when ready to save frames.
 
 Show the calibration pattern to each camera. Don't move it too far away. When a frame is taken, move the pattern to a differnt position and try to cover different parts of the frame. Keep the pattern steady when the frame is taken.
 

@@ -8,11 +8,8 @@ import os
 import matplotlib.pyplot as plt
 
 
-
-
-
 #Calibrate single camera to obtain camera intrinsic parameters from saved frames.
-def calibrate_camera_for_intrinsic_parameters(images_prefix, checkerboard_rows, checkerboard_columns, box_size_scale, criteria=(cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001), show=True):
+def calibrate_camera_for_intrinsic_parameters(camera_id=0, images_prefix='', checkerboard_rows=4, checkerboard_columns=7, box_size_scale=None, criteria=(cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001), show=True):
     
     #NOTE: images_prefix contains camera name: "frames/camera0*".
     images_names = glob.glob(images_prefix)
@@ -79,6 +76,10 @@ def calibrate_camera_for_intrinsic_parameters(images_prefix, checkerboard_rows, 
     print('camera matrix:\n', cmtx)
     print('distortion coeffs:', dist)
 
+
+    # Save calibration results to file using camera name from images_prefix
+    camera_name = f'camera_{camera_id}'
+    save_camera_intrinsics(cmtx, dist, camera_name)
     return cmtx, dist
 
 #save camera intrinsic parameters to file
@@ -104,92 +105,6 @@ def save_camera_intrinsics(camera_matrix, distortion_coefs, camera_name):
 
 
 #open both cameras and take calibration frames
-def save_frames_two_cams(camera0_name, camera1_name):
-
-    #create frames directory
-    if not os.path.exists('frames_pair'):
-        os.mkdir('frames_pair')
-
-    #settings for taking data
-    view_resize = calibration_settings['view_resize']
-    cooldown_time = calibration_settings['cooldown']    
-    number_to_save = calibration_settings['stereo_calibration_frames']
-
-    #open the video streams
-    cap0 = cv.VideoCapture(calibration_settings[camera0_name])
-    cap1 = cv.VideoCapture(calibration_settings[camera1_name])
-
-    #set camera resolutions
-    width = calibration_settings['frame_width']
-    height = calibration_settings['frame_height']
-    cap0.set(3, width)
-    cap0.set(4, height)
-    cap1.set(3, width)
-    cap1.set(4, height)
-
-    cooldown = cooldown_time
-    start = False
-    saved_count = 0
-    while True:
-
-        ret0, frame0 = cap0.read()
-        ret1, frame1 = cap1.read()
-
-        if not ret0 or not ret1:
-            print('Cameras not returning video data. Exiting...')
-            quit()
-
-        frame0_small = cv.resize(frame0, None, fx=1./view_resize, fy=1./view_resize)
-        frame1_small = cv.resize(frame1, None, fx=1./view_resize, fy=1./view_resize)
-
-        if not start:
-            cv.putText(frame0_small, "Make sure both cameras can see the calibration pattern well", (50,50), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
-            cv.putText(frame0_small, "Press SPACEBAR to start collection frames", (50,100), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
-        
-        if start:
-            cooldown -= 1
-            cv.putText(frame0_small, "Cooldown: " + str(cooldown), (50,50), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-            cv.putText(frame0_small, "Num frames: " + str(saved_count), (50,100), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-            
-            cv.putText(frame1_small, "Cooldown: " + str(cooldown), (50,50), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-            cv.putText(frame1_small, "Num frames: " + str(saved_count), (50,100), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-
-            #save the frame when cooldown reaches 0.
-            if cooldown <= 0:
-                savename = os.path.join('frames_pair', camera0_name + '_' + str(saved_count) + '.png')
-                cv.imwrite(savename, frame0)
-
-                savename = os.path.join('frames_pair', camera1_name + '_' + str(saved_count) + '.png')
-                cv.imwrite(savename, frame1)
-
-                saved_count += 1
-                cooldown = cooldown_time
-
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(8,4))
-        plt.subplot(1,2,1)
-        plt.imshow(cv.cvtColor(frame0_small, cv.COLOR_BGR2RGB))
-        plt.title('frame0_small')
-        plt.axis('off')
-        plt.subplot(1,2,2)
-        plt.imshow(cv.cvtColor(frame1_small, cv.COLOR_BGR2RGB))
-        plt.title('frame1_small')
-        plt.axis('off')
-        plt.show()
-        # k = cv.waitKey(1)
-        
-        # if k == 27:
-        #     #if ESC is pressed at any time, the program will exit.
-        #     quit()
-
-        # if k == 32:
-        #     #Press spacebar to start data collection
-        #     start = True
-
-        #break out of the loop when enough number of frames have been saved
-        if saved_count == number_to_save: break
-
-    cv.destroyAllWindows()
 
 
 #open paired calibration frames and stereo calibrate for cam0 to cam1 coorindate transformations

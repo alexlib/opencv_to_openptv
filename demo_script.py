@@ -19,13 +19,15 @@ def main():
 
     # Example usage with generic, parameterized calls to calib.py functions
     mtx1, dist1 = calib.calibrate_camera_for_intrinsic_parameters(
-        images_prefix='frames/D2/*',
+        camera_id=0,
+        images_prefix='frames/camera0/*',
         checkerboard_rows=checkerboard_rows,
         checkerboard_columns=checkerboard_columns,
         box_size_scale=box_size_scale
     )
     mtx2, dist2 = calib.calibrate_camera_for_intrinsic_parameters(
-        images_prefix='frames/J2/*',
+        camera_id=1,
+        images_prefix='frames/camera1/*',
         checkerboard_rows=checkerboard_rows,
         checkerboard_columns=checkerboard_columns,
         box_size_scale=box_size_scale
@@ -33,15 +35,15 @@ def main():
     # Stereo calibration (remove extra kwargs)
     R, T = calib.stereo_calibrate(
         mtx1, dist1, mtx2, dist2,
-        'frames/synched/D2/*.png', 'frames/synched/J2/*.png',
+        'frames/synched/camera0/*.png', 'frames/synched/camera1/*.png',
         checkerboard_rows, checkerboard_columns, box_size_scale
     )
     # Triangulation and visualization
     print("Triangulating and visualizing 3D chessboard corners from stereo images ...")
     p3ds = calib.triangulate(
         mtx1, mtx2, R, T,
-        'frames/synched/D2/*.png', 
-        'frames/synched/J2/*.png',
+        'frames/synched/camera0/*.png',
+        'frames/synched/camera1/*.png',
         rows=checkerboard_rows,
         columns=checkerboard_columns,
         show_2d=True,
