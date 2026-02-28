@@ -5,117 +5,14 @@ import sys
 from scipy import linalg
 import yaml
 import os
-
-#This will contain the calibration settings from the calibration_settings.yaml file
-calibration_settings = {}
-
-#Given Projection matrices P1 and P2, and pixel coordinates point1 and point2, return triangulated 3D point.
-def DLT(P1, P2, point1, point2):
-
-    A = [point1[1]*P1[2,:] - P1[1,:],
-         P1[0,:] - point1[0]*P1[2,:],
-         point2[1]*P2[2,:] - P2[1,:],
-         P2[0,:] - point2[0]*P2[2,:]
-        ]
-    A = np.array(A).reshape((4,4))
-
-    B = A.transpose() @ A
-    U, s, Vh = linalg.svd(B, full_matrices = False)
-
-    #print('Triangulated point: ')
-    #print(Vh[3,0:3]/Vh[3,3])
-    return Vh[3,0:3]/Vh[3,3]
+import matplotlib.pyplot as plt
 
 
-#Open and load the calibration_settings.yaml file
-def parse_calibration_settings_file(filename):
-    
-    global calibration_settings
 
-    if not os.path.exists(filename):
-        print('File does not exist:', filename)
-        quit()
-    
-    print('Using for calibration settings: ', filename)
-
-    with open(filename) as f:
-        calibration_settings = yaml.safe_load(f)
-
-    #rudimentray check to make sure correct file was loaded
-    if 'camera0' not in calibration_settings.keys():
-        print('camera0 key was not found in the settings file. Check if correct calibration_settings.yaml file was passed')
-        quit()
-
-
-#Open camera stream and save frames
-def save_frames_single_camera(camera_name):
-
-    #create frames directory
-    if not os.path.exists('frames'):
-        os.mkdir('frames')
-
-    #get settings
-    camera_device_id = calibration_settings[camera_name]
-    width = calibration_settings['frame_width']
-    height = calibration_settings['frame_height']
-    number_to_save = calibration_settings['mono_calibration_frames']
-    view_resize = calibration_settings['view_resize']
-    cooldown_time = calibration_settings['cooldown']
-
-    #open video stream and change resolution.
-    #Note: if unsupported resolution is used, this does NOT raise an error.
-    cap = cv.VideoCapture(camera_device_id)
-    cap.set(3, width)
-    cap.set(4, height)
-    
-    cooldown = cooldown_time
-    start = False
-    saved_count = 0
-
-    while True:
-    
-        ret, frame = cap.read()
-        if ret == False:
-            #if no video data is received, can't calibrate the camera, so exit.
-            print("No video data received from camera. Exiting...")
-            quit()
-
-        frame_small = cv.resize(frame, None, fx = 1/view_resize, fy=1/view_resize)
-
-        if not start:
-            cv.putText(frame_small, "Press SPACEBAR to start collection frames", (50,50), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
-        
-        if start:
-            cooldown -= 1
-            cv.putText(frame_small, "Cooldown: " + str(cooldown), (50,50), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-            cv.putText(frame_small, "Num frames: " + str(saved_count), (50,100), cv.FONT_HERSHEY_COMPLEX, 1, (0,255,0), 1)
-            
-            #save the frame when cooldown reaches 0.
-            if cooldown <= 0:
-                savename = os.path.join('frames', camera_name + '_' + str(saved_count) + '.png')
-                cv.imwrite(savename, frame)
-                saved_count += 1
-                cooldown = cooldown_time
-
-        cv.imshow('frame_small', frame_small)
-        k = cv.waitKey(1)
-        
-        if k == 27:
-            #if ESC is pressed at any time, the program will exit.
-            quit()
-
-        if k == 32:
-            #Press spacebar to start data collection
-            start = True
-
-        #break out of the loop when enough number of frames have been saved
-        if saved_count == number_to_save: break
-
-    cv.destroyAllWindows()
 
 
 #Calibrate single camera to obtain camera intrinsic parameters from saved frames.
-def calibrate_camera_for_intrinsic_parameters(images_prefix):
+def calibrate_camera_for_intrinsic_parameters(images_prefix, checkerboard_rows, checkerboard_columns, box_size_scale, criteria=(cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001), show=True):
     
     #NOTE: images_prefix contains camera name: "frames/camera0*".
     images_names = glob.glob(images_prefix)
@@ -125,11 +22,10 @@ def calibrate_camera_for_intrinsic_parameters(images_prefix):
 
     #criteria used by checkerboard pattern detector.
     #Change this if the code can't find the checkerboard. 
-    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001)
 
-    rows = calibration_settings['checkerboard_rows']
-    columns = calibration_settings['checkerboard_columns']
-    world_scaling = calibration_settings['checkerboard_box_size_scale'] #this will change to user defined length scale
+    rows = checkerboard_rows
+    columns = checkerboard_columns
+    world_scaling = box_size_scale #this will change to user defined length scale
 
     #coordinates of squares in the checkerboard world space
     objp = np.zeros((rows*columns,3), np.float32)
@@ -160,21 +56,24 @@ def calibrate_camera_for_intrinsic_parameters(images_prefix):
 
             #opencv can attempt to improve the checkerboard coordinates
             corners = cv.cornerSubPix(gray, corners, conv_size, (-1, -1), criteria)
-            cv.drawChessboardCorners(frame, (rows,columns), corners, ret)
-            cv.putText(frame, 'If detected points are poor, press "s" to skip this sample', (25, 25), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
 
-            cv.imshow('img', frame)
-            k = cv.waitKey(0)
+            # Show checkerboard detection success
 
-            if k & 0xFF == ord('s'):
-                print('skipping')
-                continue
+            if show:
+                frame_vis = frame.copy()
+                cv.drawChessboardCorners(frame_vis, (rows, columns), corners, ret)
+                plt.figure()
+                plt.imshow(cv.cvtColor(frame_vis, cv.COLOR_BGR2RGB))
+                plt.title(f'Checkerboard detected: {images_names[i]}')
+                plt.axis('off')
+                plt.show()
+
 
             objpoints.append(objp)
             imgpoints.append(corners)
 
 
-    cv.destroyAllWindows()
+    # cv.destroyAllWindows()
     ret, cmtx, dist, rvecs, tvecs = cv.calibrateCamera(objpoints, imgpoints, (width, height), None, None)
     print('rmse:', ret)
     print('camera matrix:\n', cmtx)
@@ -266,17 +165,26 @@ def save_frames_two_cams(camera0_name, camera1_name):
                 saved_count += 1
                 cooldown = cooldown_time
 
-        cv.imshow('frame0_small', frame0_small)
-        cv.imshow('frame1_small', frame1_small)
-        k = cv.waitKey(1)
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(8,4))
+        plt.subplot(1,2,1)
+        plt.imshow(cv.cvtColor(frame0_small, cv.COLOR_BGR2RGB))
+        plt.title('frame0_small')
+        plt.axis('off')
+        plt.subplot(1,2,2)
+        plt.imshow(cv.cvtColor(frame1_small, cv.COLOR_BGR2RGB))
+        plt.title('frame1_small')
+        plt.axis('off')
+        plt.show()
+        # k = cv.waitKey(1)
         
-        if k == 27:
-            #if ESC is pressed at any time, the program will exit.
-            quit()
+        # if k == 27:
+        #     #if ESC is pressed at any time, the program will exit.
+        #     quit()
 
-        if k == 32:
-            #Press spacebar to start data collection
-            start = True
+        # if k == 32:
+        #     #Press spacebar to start data collection
+        #     start = True
 
         #break out of the loop when enough number of frames have been saved
         if saved_count == number_to_save: break
@@ -285,76 +193,67 @@ def save_frames_two_cams(camera0_name, camera1_name):
 
 
 #open paired calibration frames and stereo calibrate for cam0 to cam1 coorindate transformations
-def stereo_calibrate(mtx0, dist0, mtx1, dist1, frames_prefix_c0, frames_prefix_c1):
-    #read the synched frames
+def stereo_calibrate(mtx0, dist0, mtx1, dist1, frames_prefix_c0, frames_prefix_c1, rows, columns, box_size_scale):
+    
+    # Read the synched frames
     c0_images_names = sorted(glob.glob(frames_prefix_c0))
     c1_images_names = sorted(glob.glob(frames_prefix_c1))
 
-    #open images
+    if not c0_images_names or not c1_images_names:
+        raise RuntimeError(f"No images found for patterns: {frames_prefix_c0}, {frames_prefix_c1}")
+    
+    if len(c0_images_names) != len(c1_images_names):
+        raise RuntimeError(f"Number of left/right images does not match: {len(c0_images_names)} vs {len(c1_images_names)}")
+    
     c0_images = [cv.imread(imname, 1) for imname in c0_images_names]
     c1_images = [cv.imread(imname, 1) for imname in c1_images_names]
-
-    #change this if stereo calibration not good.
+    
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001)
-
-    #calibration pattern settings
-    rows = calibration_settings['checkerboard_rows']
-    columns = calibration_settings['checkerboard_columns']
-    world_scaling = calibration_settings['checkerboard_box_size_scale']
-
-    #coordinates of squares in the checkerboard world space
+    world_scaling = box_size_scale
     objp = np.zeros((rows*columns,3), np.float32)
     objp[:,:2] = np.mgrid[0:rows,0:columns].T.reshape(-1,2)
     objp = world_scaling* objp
-
-    #frame dimensions. Frames should be the same size.
     width = c0_images[0].shape[1]
     height = c0_images[0].shape[0]
-
-    #Pixel coordinates of checkerboards
-    imgpoints_left = [] # 2d points in image plane.
+    imgpoints_left = []
     imgpoints_right = []
-
-    #coordinates of the checkerboard in checkerboard world space.
-    objpoints = [] # 3d point in real world space
-
+    objpoints = []
+    import matplotlib.pyplot as plt
+    valid_pairs = 0
     for frame0, frame1 in zip(c0_images, c1_images):
         gray1 = cv.cvtColor(frame0, cv.COLOR_BGR2GRAY)
         gray2 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
-        c_ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), None)
-        c_ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), None)
-
-        if c_ret1 == True and c_ret2 == True:
-
+        c_ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), criteria)
+        c_ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), criteria)
+        if c_ret1 and c_ret2:
             corners1 = cv.cornerSubPix(gray1, corners1, (11, 11), (-1, -1), criteria)
             corners2 = cv.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
-
-            p0_c1 = corners1[0,0].astype(np.int32)
-            p0_c2 = corners2[0,0].astype(np.int32)
-
-            cv.putText(frame0, 'O', (p0_c1[0], p0_c1[1]), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
-            cv.drawChessboardCorners(frame0, (rows,columns), corners1, c_ret1)
-            cv.imshow('img', frame0)
-
-            cv.putText(frame1, 'O', (p0_c2[0], p0_c2[1]), cv.FONT_HERSHEY_COMPLEX, 1, (0,0,255), 1)
-            cv.drawChessboardCorners(frame1, (rows,columns), corners2, c_ret2)
-            cv.imshow('img2', frame1)
-            k = cv.waitKey(0)
-
-            if k & 0xFF == ord('s'):
-                print('skipping')
-                continue
-
+            # Visualize both frames with detected corners
+            f0_vis = frame0.copy()
+            f1_vis = frame1.copy()
+            cv.drawChessboardCorners(f0_vis, (rows, columns), corners1, c_ret1)
+            cv.drawChessboardCorners(f1_vis, (rows, columns), corners2, c_ret2)
+            plt.figure(figsize=(10,5))
+            plt.subplot(1,2,1)
+            plt.imshow(cv.cvtColor(f0_vis, cv.COLOR_BGR2RGB))
+            plt.title('Stereo Left')
+            plt.axis('off')
+            plt.subplot(1,2,2)
+            plt.imshow(cv.cvtColor(f1_vis, cv.COLOR_BGR2RGB))
+            plt.title('Stereo Right')
+            plt.axis('off')
+            plt.show()
             objpoints.append(objp)
             imgpoints_left.append(corners1)
             imgpoints_right.append(corners2)
-
+            valid_pairs += 1
+    if valid_pairs == 0:
+        raise RuntimeError("No valid stereo pairs with detected checkerboards found.")
     stereocalibration_flags = cv.CALIB_FIX_INTRINSIC
-    ret, CM1, dist0, CM2, dist1, R, T, E, F = cv.stereoCalibrate(objpoints, imgpoints_left, imgpoints_right, mtx0, dist0,
-                                                                 mtx1, dist1, (width, height), criteria = criteria, flags = stereocalibration_flags)
-
+    ret, CM1, dist0, CM2, dist1, R, T, E, F = cv.stereoCalibrate(
+        objpoints, imgpoints_left, imgpoints_right, mtx0, dist0,
+        mtx1, dist1, (width, height), criteria=criteria, flags=stereocalibration_flags)
     print('rmse: ', ret)
-    cv.destroyAllWindows()
     return R, T
 
 #Converts Rotation matrix R and Translation vector T into a homogeneous representation matrix
@@ -450,11 +349,20 @@ def check_calibration(camera0_name, camera0_data, camera1_name, camera1_data, _z
             _p = tuple(_p.astype(np.int32))
             cv.line(frame1, origin, _p, col, 2)
 
-        cv.imshow('frame0', frame0)
-        cv.imshow('frame1', frame1)
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(8,4))
+        plt.subplot(1,2,1)
+        plt.imshow(cv.cvtColor(frame0, cv.COLOR_BGR2RGB))
+        plt.title('frame0')
+        plt.axis('off')
+        plt.subplot(1,2,2)
+        plt.imshow(cv.cvtColor(frame1, cv.COLOR_BGR2RGB))
+        plt.title('frame1')
+        plt.axis('off')
+        plt.show()
 
-        k = cv.waitKey(1)
-        if k == 27: break
+        # k = cv.waitKey(1)
+        # if k == 27: break
 
     cv.destroyAllWindows()
 
@@ -515,9 +423,18 @@ def get_cam1_to_world_transforms(cmtx0, dist0, R_W0, T_W0,
         _p = tuple(_p.astype(np.int32))
         cv.line(frame1, origin, _p, col, 2)
 
-    cv.imshow('frame0', frame0)
-    cv.imshow('frame1', frame1)
-    cv.waitKey(0)
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(8,4))
+    plt.subplot(1,2,1)
+    plt.imshow(cv.cvtColor(frame0, cv.COLOR_BGR2RGB))
+    plt.title('frame0')
+    plt.axis('off')
+    plt.subplot(1,2,2)
+    plt.imshow(cv.cvtColor(frame1, cv.COLOR_BGR2RGB))
+    plt.title('frame1')
+    plt.axis('off')
+    plt.show()
+    # cv.waitKey(0)
 
     return R_W1, T_W1
 
@@ -563,64 +480,99 @@ def save_extrinsic_calibration_parameters(R0, T0, R1, T1, prefix = ''):
 
     return R0, T0, R1, T1
 
-if __name__ == '__main__':
 
-    if len(sys.argv) != 2:
-        print('Call with settings filename: "python3 calibrate.py calibration_settings.yaml"')
-        quit()
+def triangulate(mtx1, mtx2, R, T, frames_prefix_c0="frames/synched/D2/*.png", frames_prefix_c1='frames/synched/J2/*.png', rows=4, columns=7, show_2d=True, show_3d=True):
+    """
+    Triangulate chessboard corners from two selected frames and plot the 3D reconstruction.
+    Args:
+        mtx1, mtx2: Intrinsic matrices for camera 1 and 2
+        R, T: Rotation and translation from stereo calibration
+        synched_folder: Glob pattern for stereo image pairs
+        rows, columns: Checkerboard inner corners
+        show_2d: Show 2D corner detection plots
+        show_3d: Show 3D triangulation plot
+    Returns:
+        p3ds: Nx3 array of triangulated 3D points
+    """
+       # Read the synched frames
+    c0_images_names = sorted(glob.glob(frames_prefix_c0))
+    c1_images_names = sorted(glob.glob(frames_prefix_c1))
+
+    if not c0_images_names or not c1_images_names:
+        raise RuntimeError(f"No images found for patterns: {frames_prefix_c0}, {frames_prefix_c1}")
     
-    #Open and parse the settings file
-    parse_calibration_settings_file(sys.argv[1])
+    if len(c0_images_names) != len(c1_images_names):
+        raise RuntimeError(f"Number of left/right images does not match: {len(c0_images_names)} vs {len(c1_images_names)}")
+    
+    c0_images = [cv.imread(imname, 1) for imname in c0_images_names]
+    c1_images = [cv.imread(imname, 1) for imname in c1_images_names]
+    
+    frame1 = c0_images[0]
+    frame2 = c1_images[0]
+    
+    
+    if frame1 is None or frame2 is None:
+        raise RuntimeError(f"Could not load images: {c0_images_names[0]}, {c1_images_names[0]}")
+    
+    gray1 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
+    gray2 = cv.cvtColor(frame2, cv.COLOR_BGR2GRAY)
+    
+    criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001)
+    
+    ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), criteria)
+    ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), criteria)
+    
+    
+    if not ret1 or not ret2:
+        raise RuntimeError("Could not detect chessboard corners in one or both images.")
+    corners1 = cv.cornerSubPix(gray1, corners1, (11, 11), (-1, -1), criteria)
+    corners2 = cv.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
+    uvs1 = corners1.reshape(-1, 2)
+    uvs2 = corners2.reshape(-1, 2)
 
 
-    """Step1. Save calibration frames for single cameras"""
-    # save_frames_single_camera('camera0') #save frames for camera0
-    # save_frames_single_camera('camera1') #save frames for camera1
 
-
-    """Step2. Obtain camera intrinsic matrices and save them"""
-    #camera0 intrinsics
-    images_prefix = os.path.join('D2', 'camera0*')
-    cmtx0, dist0 = calibrate_camera_for_intrinsic_parameters(images_prefix) 
-    save_camera_intrinsics(cmtx0, dist0, 'camera0') #this will write cmtx and dist to disk
-    #camera1 intrinsics
-    images_prefix = os.path.join('J2', 'camera1*')
-    cmtx1, dist1 = calibrate_camera_for_intrinsic_parameters(images_prefix)
-    save_camera_intrinsics(cmtx1, dist1, 'camera1') #this will write cmtx and dist to disk
-
-
-    """Step3. Save calibration frames for both cameras simultaneously"""
-    save_frames_two_cams('camera0', 'camera1') #save simultaneous frames
-
-
-    """Step4. Use paired calibration pattern frames to obtain camera0 to camera1 rotation and translation"""
-    frames_prefix_c0 = os.path.join('synched', 'camera0*')
-    frames_prefix_c1 = os.path.join('synched', 'camera1*')
-    R, T = stereo_calibrate(cmtx0, dist0, cmtx1, dist1, frames_prefix_c0, frames_prefix_c1)
-
-
-    """Step5. Save calibration data where camera0 defines the world space origin."""
-    #camera0 rotation and translation is identity matrix and zeros vector
-    R0 = np.eye(3, dtype=np.float32)
-    T0 = np.array([0., 0., 0.]).reshape((3, 1))
-
-    save_extrinsic_calibration_parameters(R0, T0, R, T) #this will write R and T to disk
-    R1 = R; T1 = T #to avoid confusion, camera1 R and T are labeled R1 and T1
-    #check your calibration makes sense
-    camera0_data = [cmtx0, dist0, R0, T0]
-    camera1_data = [cmtx1, dist1, R1, T1]
-    check_calibration('camera0', camera0_data, 'camera1', camera1_data, _zshift = 60.)
-
-
-    """Optional. Define a different origin point and save the calibration data"""
-    # #get the world to camera0 rotation and translation
-    # R_W0, T_W0 = get_world_space_origin(cmtx0, dist0, os.path.join('frames_pair', 'camera0_4.png'))
-    # #get rotation and translation from world directly to camera1
-    # R_W1, T_W1 = get_cam1_to_world_transforms(cmtx0, dist0, R_W0, T_W0,
-    #                                           cmtx1, dist1, R1, T1,
-    #                                           os.path.join('frames_pair', 'camera0_4.png'),
-    #                                           os.path.join('frames_pair', 'camera1_4.png'),)
-
-    # #save rotation and translation parameters to disk
-    # save_extrinsic_calibration_parameters(R_W0, T_W0, R_W1, T_W1, prefix = 'world_to_') #this will write R and T to disk
-
+    if show_2d:
+        import matplotlib.pyplot as plt
+        plt.imshow(frame1[:,:,[2,1,0]])
+        plt.scatter(uvs1[:,0], uvs1[:,1])
+        plt.title('Detected corners in frame 1')
+        plt.show()
+        plt.imshow(frame2[:,:,[2,1,0]])
+        plt.scatter(uvs2[:,0], uvs2[:,1])
+        plt.title('Detected corners in frame 2')
+        plt.show()
+    #RT matrix for C1 is identity.
+    RT1 = np.concatenate([np.eye(3), [[0],[0],[0]]], axis = -1)
+    P1 = mtx1 @ RT1 #projection matrix for C1
+    #RT matrix for C2 is the R and T obtained from stereo calibration.
+    RT2 = np.concatenate([R, T], axis = -1)
+    P2 = mtx2 @ RT2 #projection matrix for C2
+    def DLT(P1, P2, point1, point2):
+        A = [point1[1]*P1[2,:] - P1[1,:],
+             P1[0,:] - point1[0]*P1[2,:],
+             point2[1]*P2[2,:] - P2[1,:],
+             P2[0,:] - point2[0]*P2[2,:]
+            ]
+        A = np.array(A).reshape((4,4))
+        B = A.transpose() @ A
+        from scipy import linalg
+        U, s, Vh = linalg.svd(B, full_matrices = False)
+        return Vh[3,0:3]/Vh[3,3]
+    p3ds = []
+    for uv1, uv2 in zip(uvs1, uvs2):
+        _p3d = DLT(P1, P2, uv1, uv2)
+        p3ds.append(_p3d)
+    p3ds = np.array(p3ds)
+    if show_3d:
+        from mpl_toolkits.mplot3d import Axes3D
+        import matplotlib.pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.scatter(p3ds[:,0], p3ds[:,1], p3ds[:,2], c='b', marker='o')
+        ax.set_title('Triangulated 3D Chessboard Corners')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        plt.show()
+    return p3ds
