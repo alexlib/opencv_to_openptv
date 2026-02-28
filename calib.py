@@ -419,21 +419,30 @@ def triangulate(mtx1, mtx2, R, T, frames_prefix_c0="frames/synched/D2/*.png", fr
     if len(c0_images_names) != len(c1_images_names):
         raise RuntimeError(f"Number of left/right images does not match: {len(c0_images_names)} vs {len(c1_images_names)}")
     
+    # Load and undistort images
+    dist1 = None
+    dist2 = None
+    try:
+        _, dist1 = load_intrinsics('camera0')
+        _, dist2 = load_intrinsics('camera1')
+    except Exception:
+        pass
     c0_images = [cv.imread(imname, 1) for imname in c0_images_names]
     c1_images = [cv.imread(imname, 1) for imname in c1_images_names]
-    
+    # Undistort if distortion coefficients are available
+    if dist1 is not None and dist2 is not None:
+        c0_images = [cv.undistort(img, mtx1, dist1) for img in c0_images]
+        c1_images = [cv.undistort(img, mtx2, dist2) for img in c1_images]
+
+
     frame1 = c0_images[0]
     frame2 = c1_images[0]
-    
-    
     if frame1 is None or frame2 is None:
         raise RuntimeError(f"Could not load images: {c0_images_names[0]}, {c1_images_names[0]}")
-    
+        
     gray1 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
     gray2 = cv.cvtColor(frame2, cv.COLOR_BGR2GRAY)
-    
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.001)
-    
     ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), criteria)
     ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), criteria)
     
