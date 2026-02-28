@@ -1,0 +1,14 @@
+[project]
+name = "opencv-to-openptv"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "marimo>=0.20.2",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.2",
+    "opencv-python-headless>=4.13.0.92",
+    "scipy>=1.17.1",
+]

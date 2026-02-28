@@ -7,10 +7,17 @@ import matplotlib.pyplot as plt
  
 def calibrate_camera(images_folder):
     images_names = glob.glob(images_folder)
+    print(f"Found {len(images_names)} images in {images_folder}:")
+    for name in images_names:
+        print("  ", name)
     images = []
     for imname in images_names:
         im = cv.imread(imname, 1)
+        if im is None:
+            print(f"Warning: Could not read image {imname}")
         images.append(im)
+    if not images:
+        raise RuntimeError(f"No images loaded from {images_folder}. Check your path and files.")
  
     # plt.figure(figsize = (10,10))
     # ax = [plt.subplot(2,2,i+1) for i in range(4)]
@@ -26,8 +33,11 @@ def calibrate_camera(images_folder):
     #Change this if the code can't find the checkerboard
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
  
-    rows = 5 #number of checkerboard rows.
-    columns = 8 #number of checkerboard columns.
+    # === SET YOUR CHECKERBOARD SIZE HERE ===
+    rows = 4      # Number of checkerboard rows (inner corners)
+    columns = 7   # Number of checkerboard columns (inner corners)
+    # Example: For a 9x6 checkerboard, set rows=6, columns=9
+    # =======================================
     world_scaling = 1. #change this to the real world square size. Or not.
  
     #coordinates of squares in the checkerboard world space
@@ -46,25 +56,49 @@ def calibrate_camera(images_folder):
     objpoints = [] # 3d point in real world space
  
  
-    for frame in images:
+
+    import os
+    failed_dir = "checkerboard_failed"
+    os.makedirs(failed_dir, exist_ok=True)
+    for idx, frame in enumerate(images):
+        if frame is None:
+            continue
         gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
- 
-        #find the checkerboard
+
+        # Try normal detection first
         ret, corners = cv.findChessboardCorners(gray, (rows, columns), None)
- 
+
+        # If not found, try adaptive thresholding
+        used_adaptive = False
+        if not ret:
+            gray_adapt = cv.adaptiveThreshold(gray, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                              cv.THRESH_BINARY, 11, 2)
+            ret, corners = cv.findChessboardCorners(gray_adapt, (rows, columns), None)
+            if ret:
+                used_adaptive = True
+                print(f"Checkerboard detected in image {images_names[idx]} using adaptive thresholding.")
         if ret == True:
- 
             #Convolution size used to improve corner detection. Don't make this too large.
             conv_size = (11, 11)
- 
+
             #opencv can attempt to improve the checkerboard coordinates
             corners = cv.cornerSubPix(gray, corners, conv_size, (-1, -1), criteria)
             cv.drawChessboardCorners(frame, (rows,columns), corners, ret)
-            cv.imshow('img', frame)
-            cv.waitKey(500)
- 
+            # Save successful detection overlay for review
+            out_path = os.path.join(failed_dir, f"success_{idx}{'_adapt' if used_adaptive else ''}.png")
+            cv.imwrite(out_path, frame)
+            print(f"Checkerboard detected in image {images_names[idx]}. Saved overlay to {out_path}")
             objpoints.append(objp)
             imgpoints.append(corners)
+        else:
+            print(f"Checkerboard NOT detected in image {images_names[idx]}")
+            # Save failed image for debugging
+            fail_path = os.path.join(failed_dir, f"fail_{idx}.png")
+            cv.imwrite(fail_path, frame)
+            print(f"Saved failed detection image to {fail_path}")
+
+    if not objpoints or not imgpoints:
+        raise RuntimeError("No checkerboard corners found in any image. Check your images and checkerboard pattern.")
  
  
  
@@ -96,8 +130,8 @@ def stereo_calibrate(mtx1, dist1, mtx2, dist2, frames_folder):
     #change this if stereo calibration not good.
     criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.0001)
  
-    rows = 5 #number of checkerboard rows.
-    columns = 8 #number of checkerboard columns.
+    rows = 4 #number of checkerboard rows.
+    columns = 7 #number of checkerboard columns.
     world_scaling = 1. #change this to the real world square size. Or not.
  
     #coordinates of squares in the checkerboard world space
@@ -119,17 +153,17 @@ def stereo_calibrate(mtx1, dist1, mtx2, dist2, frames_folder):
     for frame1, frame2 in zip(c1_images, c2_images):
         gray1 = cv.cvtColor(frame1, cv.COLOR_BGR2GRAY)
         gray2 = cv.cvtColor(frame2, cv.COLOR_BGR2GRAY)
-        c_ret1, corners1 = cv.findChessboardCorners(gray1, (5, 8), None)
-        c_ret2, corners2 = cv.findChessboardCorners(gray2, (5, 8), None)
+        c_ret1, corners1 = cv.findChessboardCorners(gray1, (rows, columns), None)
+        c_ret2, corners2 = cv.findChessboardCorners(gray2, (rows, columns), None)
  
         if c_ret1 == True and c_ret2 == True:
             corners1 = cv.cornerSubPix(gray1, corners1, (11, 11), (-1, -1), criteria)
             corners2 = cv.cornerSubPix(gray2, corners2, (11, 11), (-1, -1), criteria)
  
-            cv.drawChessboardCorners(frame1, (5,8), corners1, c_ret1)
+            cv.drawChessboardCorners(frame1, (rows, columns), corners1, c_ret1)
             cv.imshow('img', frame1)
  
-            cv.drawChessboardCorners(frame2, (5,8), corners2, c_ret2)
+            cv.drawChessboardCorners(frame2, (rows, columns), corners2, c_ret2)
             cv.imshow('img2', frame2)
             cv.waitKey(500)
  
@@ -222,10 +256,10 @@ def triangulate(mtx1, mtx2, R, T):
     plt.show()
  
  
-mtx1, dist1 = calibrate_camera(images_folder = 'D2/*')
-mtx2, dist2 = calibrate_camera(images_folder = 'J2/*')
+mtx1, dist1 = calibrate_camera(images_folder = 'frames/D2/*')
+mtx2, dist2 = calibrate_camera(images_folder = 'frames/J2/*')
  
-R, T = stereo_calibrate(mtx1, dist1, mtx2, dist2, 'synched/*')
+R, T = stereo_calibrate(mtx1, dist1, mtx2, dist2, 'frames/synched/*')
  
 #this call might cause segmentation fault error. This is due to calling cv.imshow() and plt.show()
 triangulate(mtx1, mtx2, R, T)

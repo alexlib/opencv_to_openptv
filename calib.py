@@ -574,17 +574,17 @@ if __name__ == '__main__':
 
 
     """Step1. Save calibration frames for single cameras"""
-    save_frames_single_camera('camera0') #save frames for camera0
-    save_frames_single_camera('camera1') #save frames for camera1
+    # save_frames_single_camera('camera0') #save frames for camera0
+    # save_frames_single_camera('camera1') #save frames for camera1
 
 
     """Step2. Obtain camera intrinsic matrices and save them"""
     #camera0 intrinsics
-    images_prefix = os.path.join('frames', 'camera0*')
+    images_prefix = os.path.join('D2', 'camera0*')
     cmtx0, dist0 = calibrate_camera_for_intrinsic_parameters(images_prefix) 
     save_camera_intrinsics(cmtx0, dist0, 'camera0') #this will write cmtx and dist to disk
     #camera1 intrinsics
-    images_prefix = os.path.join('frames', 'camera1*')
+    images_prefix = os.path.join('J2', 'camera1*')
     cmtx1, dist1 = calibrate_camera_for_intrinsic_parameters(images_prefix)
     save_camera_intrinsics(cmtx1, dist1, 'camera1') #this will write cmtx and dist to disk
 
@@ -594,8 +594,8 @@ if __name__ == '__main__':
 
 
     """Step4. Use paired calibration pattern frames to obtain camera0 to camera1 rotation and translation"""
-    frames_prefix_c0 = os.path.join('frames_pair', 'camera0*')
-    frames_prefix_c1 = os.path.join('frames_pair', 'camera1*')
+    frames_prefix_c0 = os.path.join('synched', 'camera0*')
+    frames_prefix_c1 = os.path.join('synched', 'camera1*')
     R, T = stereo_calibrate(cmtx0, dist0, cmtx1, dist1, frames_prefix_c0, frames_prefix_c1)
 
 
